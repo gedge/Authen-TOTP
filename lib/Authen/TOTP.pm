@@ -497,12 +497,13 @@ C<epoch>=> Time used for comparison of OTPs
 =item tolerance
 
 Deprecated option, replaced by C<allowed_drift> -
-the default of C<1> is equivalent to C<allowed_drift => 0>
+the default of C<1> is equivalent to an C<allowed_drift> of C<0>
 
 =item allowed_drift
 
 C<0>=> Due to time sync issues, you may want to tune this to compare the
-user-supplied OTP with I<this many> additional generated OTPs before B<and> after
+user-supplied OTP with I<this many> additional generated OTPs
+before B<and> after the current iteration
 (i.e. a value of C<0> compares with the current OTP, and no more;
 a value of C<1> checks the current OTP, plus one before and one after)
 
