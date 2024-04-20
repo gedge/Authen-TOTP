@@ -1,6 +1,6 @@
-# Authen::TOTP version 0.1.0
+# Authen::TOTP version 0.1.1
 #
-# Copyright (c) 2020 Thanos Chatziathanassiou <tchatzi@arx.net>. All rights reserved.
+# Copyright (c) 2020-2024 Thanos Chatziathanassiou <tchatzi@arx.net>. All rights reserved.
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
 
@@ -12,7 +12,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 
 @EXPORT_OK = qw();
 
-$Authen::TOTP::VERSION='0.1.0';
+$Authen::TOTP::VERSION='0.1.1';
 $Authen::TOTP::ver=$Authen::TOTP::VERSION;
 
 use strict;
@@ -101,15 +101,15 @@ sub valid_when {
 	}
 	1;
 }
-sub valid_tolerance {
+sub valid_allowed_drift {
 	my $self = shift;
-	my $tolerance = shift;
+	my $allowed_drift = shift;
 
-	if ($tolerance && $tolerance =~ m|^\d+$| && $tolerance > 0) {
-		$self->{tolerance} = ($tolerance-1);
+	if ($allowed_drift && $allowed_drift =~ m|^\d+$| && $allowed_drift >= 0) {
+		$self->{allowed_drift} = $allowed_drift;
 	}
-	elsif (!defined($self->{tolerance}) || $self->{tolerance} !~ m|^\d+$|) {
-		$self->{tolerance} = 0;
+	elsif (!defined($self->{allowed_drift}) || $self->{allowed_drift} !~ m|^\d+$|) {
+		$self->{allowed_drift} = 0;
 	}
 	1;
 }
@@ -248,7 +248,7 @@ sub generate_otp {
 	my $self = shift;
 	my ($digits,$period,$algorithm,$secret,$base32secret, $issuer, $user) = 
 		$self->process_sub_arguments(\@_,[ 'digits', 'period', 'algorithm', 'secret', 'base32secret', 'issuer', 'user']);
-	
+
 	unless ($user) {
 		Carp::confess("need user to use as prefix in generate_otp()");
 	}
@@ -275,23 +275,30 @@ sub generate_otp {
 
 sub validate_otp {
 	my $self = shift;
-	my ($digits,$period,$algorithm,$secret,$when,$tolerance,$base32secret, $otp) = 
-		$self->process_sub_arguments(\@_,[ 'digits', 'period', 'algorithm', 'secret', 'when', 'tolerance', 'base32secret', 'otp']);
-	
+	my ($digits,$period,$algorithm,$secret,$when,$allowed_drift,$tolerance,$base32secret, $otp) = 
+		$self->process_sub_arguments(\@_,[ 'digits', 'period', 'algorithm', 'secret', 'when', 'allowed_drift', 'tolerance', 'base32secret', 'otp']);
+
 	unless ($otp && $otp =~ m|^\d{6,8}$|) {
 		$otp ||= "";
 		Carp::confess("invalid otp $otp passed to validate_otp()");
+	}
+
+	if (defined $tolerance) {
+		if (defined $allowed_drift) {
+			Carp::confess("cannot use conflicting 'allowed_drift' and (deprecated) 'tolerance' arguments to validate_otp()");
+		}
+		$allowed_drift = $tolerance - 1;
 	}
 
 	$self->valid_digits($digits);
 	$self->valid_period($period);
 	$self->valid_algorithm($algorithm);
 	$self->valid_when($when);
-	$self->valid_tolerance($tolerance);
+	$self->valid_allowed_drift($allowed_drift);
 	$self->valid_secret($secret, $base32secret);
 
 	my @tests = ( $self->{when} );
-	for my $i (1..$self->{tolerance}) {
+	for my $i (1..$self->{allowed_drift}) {
 		push @tests, ($self->{when} - ($self->{period} * $i) );
 		push @tests, ($self->{when} + ($self->{period} * $i) );
 	}
@@ -359,14 +366,22 @@ sub initialize {
 			}
 		}
 	}
-	
+
+	if (defined $self->{tolerance}) {
+		if (defined $self->{allowed_drift}) {
+			Carp::confess("cannot use conflicting 'allowed_drift' and (deprecated) 'tolerance' arguments");
+		}
+		$self->{allowed_drift} = $self->{tolerance} - 1;
+		delete $self->{tolerance};
+	}
+
 	$self->valid_digits();
 	$self->valid_period();
 	$self->valid_algorithm();
 	$self->valid_when();
-	$self->valid_tolerance();
+	$self->valid_allowed_drift();
 	$self->valid_secret();
-			
+
 	return $self;
 }
 
@@ -386,7 +401,7 @@ __END__
 
 Authen::TOTP - Interface to RFC6238 two factor authentication (2FA)
 
-Version 0.1.0
+Version 0.1.1
 
 =head1 SYNOPSIS
 
@@ -427,7 +442,7 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
  #...or you can pass it to google charts and be done with it
 
  #compare user's OTP with computed one
- if ($gen->validate_otp(otp => <user_input>, secret => <stored_secret>, tolerance => 1)) {
+ if ($gen->validate_otp(otp => <user_input>, secret => <stored_secret>, allowed_drift => 1)) {
 	#2FA success
  }
  else {
@@ -448,7 +463,7 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
 	 algorithm	=>	"SHA1", #SHA256 and SHA512 are equally valid
 	 secret		=>	"some_random_stuff",
 	 when		=>	<some_epoch>,
-	 tolerance	=>	0,
+	 allowed_drift	=>	0,
  );
 
 =head2 Parameters/Properties (defaults listed)
@@ -481,8 +496,15 @@ C<epoch>=> Time used for comparison of OTPs
 
 =item tolerance
 
-C<1>=> Due to time sync issues, you may want to tune this and compare
-this many OTPs before and after
+Deprecated option, replaced by C<allowed_drift> -
+the default of C<1> is equivalent to C<allowed_drift => 0>
+
+=item allowed_drift
+
+C<0>=> Due to time sync issues, you may want to tune this to compare the
+user-supplied OTP with I<this many> additional generated OTPs before B<and> after
+(i.e. a value of C<0> compares with the current OTP, and no more;
+a value of C<1> checks the current OTP, plus one before and one after)
 
 =back
 
@@ -522,18 +544,20 @@ Usage:
 	 algorithm	=>	"SHA1", #SHA256 and SHA512 are equally valid
 	 secret		=>	"the_same_random_stuff_you_used_to_generate_the_TOTP",
 	 when		=>	<epoch_to_use_as_reference>,
-	 tolerance	=>	<try this many iterations before/after when>
+	 allowed_drift	=>	<try this many iterations before/after when>
 	 otp		=>	<OTP to compare to>
  );
 
  $gen->otp( <when> ); # Get the TOTP token at <epoch_to_use>
- 
+
 =back
 
 =cut
 
 =head1 Revision History
 
+ 0.1.1
+	Deprecate C<tolerance> in favour of clearer C<allowed_drift>
  0.1.0
 	Fix documentation inaccuracies (still referenced MIME::Base32::XS)
  0.0.9
@@ -602,7 +626,7 @@ L<http://www.arx.net>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2020 arx.net - Thanos Chatziathanassiou . All rights reserved.
+Copyright (c) 2020-2024 arx.net - Thanos Chatziathanassiou . All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

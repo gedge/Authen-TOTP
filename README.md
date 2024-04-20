@@ -2,7 +2,7 @@
 
 Authen::TOTP - Interface to RFC6238 two factor authentication (2FA)
 
-Version 0.1.0
+Version 0.1.1
 
 # SYNOPSIS
 
@@ -23,7 +23,7 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
 
     #will generate a TOTP URI, suitable to use in a QR Code
     my $uri = $gen->generate_otp(user => 'user\@example.com', issuer => "example.com");
-    
+
     print qq{$uri\n};
     #store $gen->secret() or $gen->base32secret() someplace safe!
 
@@ -43,7 +43,7 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
     #...or you can pass it to google charts and be done with it
 
     #compare user's OTP with computed one
-    if ($gen->validate_otp(otp => <user_input>, secret => <stored_secret>, tolerance => 1)) {
+    if ($gen->validate_otp(otp => <user_input>, secret => <stored_secret>, allowed_drift => 0)) {
            #2FA success
     }
     else {
@@ -58,7 +58,7 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
             algorithm      =>      "SHA1", #SHA256 and SHA512 are equally valid
             secret         =>      "some_random_stuff",
             when           =>      <some_epoch>,
-            tolerance      =>      0,
+            allowed_drift  =>      0,
     );
 
 ## Parameters/Properties (defaults listed)
@@ -89,8 +89,15 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
 
 - tolerance
 
-    `1`=> Due to time sync issues, you may want to tune this and compare
-    this many OTPs before and after
+    Deprecated option, replaced by `allowed_drift` -
+    the default of `1` is equivalent to `allowed_drift => 0`)
+
+- allowed_drift
+
+    `0`=> Due to time sync issues, you may want to tune this to compare the
+    user-supplied OTP with _this many_ additional generated OTPs before *and* after
+    (i.e. a value of `0` compares with the current OTP, and no more;
+    a value of `1` checks the current OTP, plus one before and one after).
 
 ## Utility Functions
 
@@ -126,13 +133,15 @@ It currently passes RFC6238 Test Vectors for SHA1, SHA256, SHA512
                 algorithm      =>      "SHA1", #SHA256 and SHA512 are equally valid
                 secret         =>      "the_same_random_stuff_you_used_to_generate_the_TOTP",
                 when           =>      <epoch_to_use_as_reference>,
-                tolerance      =>      <try this many iterations before/after when>
+                allowed_drift         =>      <try this many iterations before/after when>
                 otp            =>      <OTP to compare to>
         );
-        
+
 
 # Revision History
 
+    0.1.1
+           Deprecate 'tolerance' in favour of clearer 'allowed_drift'
     0.1.0
            Fix documentation inaccuracies (still referenced MIME::Base32::XS)
     0.0.9
@@ -203,7 +212,7 @@ Thanos Chatziathanassiou <tchatzi@arx.net>
 
 # COPYRIGHT
 
-Copyright (c) 2020 arx.net - Thanos Chatziathanassiou . All rights reserved.
+Copyright (c) 2020-2024 arx.net - Thanos Chatziathanassiou . All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
